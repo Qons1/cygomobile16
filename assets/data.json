@@ -1,0 +1,35 @@
+{
+  "users": {
+    "uid12345": {
+      "displayName": "John Doe",
+      "email": "john@example.com",
+      "isPWD": false,
+      "pwdStatus": "none",
+      "qrData": "uid12345",
+      "activeTransaction": null
+    }
+  },
+  "transactions": {
+    "tx98765": {
+      "txId": "tx98765",
+      "uid": "uid12345",
+      "vehicleType": "CAR",
+      "slot": "A1",
+      "timeIn": "2025-08-11T08:00:00Z",
+      "timeOut": null,
+      "durationHours": null,
+      "ratePerHour": null,
+      "amount": null,
+      "discountPercent": 0.2,
+      "discountAmount": null,
+      "amountToPay": null,
+      "amountPaid": 0,
+      "status": "ONGOING"
+    }
+  },
+  "config": {
+    "carRatePerHour": 50,
+    "motorcycleRatePerHour": 20,
+    "pwdDiscountPercent": 0.2
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "184723022619",
+    "firebase_url": "https://cygo1-c184c-default-rtdb.firebaseio.com",
+    "project_id": "cygo1-c184c",
+    "storage_bucket": "cygo1-c184c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:184723022619:android:4d5cd71c1a71bead3229be",
+        "android_client_info": {
+          "package_name": "com.example.cygo_pk"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBwl1Rs9f1noSh5myC6XgYwomtMKrNd0aU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:184723022619:android:678392a413587e343229be",
+        "android_client_info": {
+          "package_name": "com.example.cygo_ps"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBwl1Rs9f1noSh5myC6XgYwomtMKrNd0aU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
