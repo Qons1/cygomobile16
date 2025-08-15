@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cygo_ps/app_drawer.dart';
 import 'menu/payment_page.dart'; // make sure you have this import
 
@@ -24,13 +25,14 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
   String vehicleTypeStr = '';
   double ratePerHour = 0;
   String timeIn = '';
-  String status = 'ONGOING';
+  String status = 'PENDING_ENTRY';
   String txId = '';
   bool saving = true;
   String qrData = '';
   bool isPWD = false;
   double discountPercent = 0.0;
   double amountToPay = 0.0; // <-- added to pass to payment page
+  Stream<DatabaseEvent>? _txStream;
 
   @override
   void initState() {
@@ -93,10 +95,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
       });
     }
 
-    // 3. Assign parking slot based on registered layout in Realtime Database
-    final selectedSlotName = await _selectSlotDisplayName(isPWD, widget.vehicleType);
-    slot = selectedSlotName ?? (widget.vehicleType.toUpperCase() == 'CAR' ? 'A1' : 'M1');
-    timeIn = DateTime.now().toIso8601String();
+    // 3. Do not assign slot/timeIn here. They will be set when QR is scanned at entry.
     vehicleTypeStr = widget.vehicleType;
 
     // 4. Calculate fee
@@ -112,22 +111,24 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
       'txId': txId,
       'uid': uid,
       'vehicleType': widget.vehicleType,
-      'slot': slot,
-      'timeIn': timeIn,
+      'slot': null,
+      'timeIn': null,
       'timeOut': null,
       'durationHours': null,
       'ratePerHour': ratePerHour,
       'discountPercent': isPWD ? discountPercent : 0.0,
-      'discountAmount': discount,
-      'amountToPay': amountToPay,
+      'discountAmount': null,
+      'amountToPay': null,
       'amountPaid': 0,
-      'status': status,
+      'status': 'PENDING_ENTRY',
     };
 
     await txRef.set(txData);
 
     // 6. Link active transaction to user
     await db.child('users/$uid/activeTransaction').set(txId);
+
+    _listenToTransaction(txId);
 
     setState(() {
       saving = false;
@@ -165,14 +166,35 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
     txId = (data['txId'] ?? tx).toString();
     slot = (data['slot'] ?? '').toString();
     timeIn = (data['timeIn'] ?? '').toString();
-    status = (data['status'] ?? 'ONGOING').toString();
+    status = (data['status'] ?? 'PENDING_ENTRY').toString();
     ratePerHour = (data['ratePerHour'] ?? 0).toDouble();
     discountPercent = (data['discountPercent'] ?? 0).toDouble();
     amountToPay = (data['amountToPay'] ?? 0).toDouble();
     vehicleTypeStr = (data['vehicleType'] ?? widget.vehicleType).toString();
 
+    _listenToTransaction(txId);
+
     setState(() {
       saving = false;
+    });
+  }
+
+  void _listenToTransaction(String id) {
+    _txStream = FirebaseDatabase.instance.ref('transactions/' + id).onValue;
+    _txStream!.listen((event) {
+      final snapVal = event.snapshot.value;
+      if (snapVal is Map) {
+        final data = Map<String, dynamic>.from(snapVal);
+        setState(() {
+          slot = (data['slot'] ?? '').toString();
+          timeIn = (data['timeIn'] ?? '').toString();
+          status = (data['status'] ?? status).toString();
+          ratePerHour = (data['ratePerHour'] ?? ratePerHour).toDouble();
+          discountPercent = (data['discountPercent'] ?? discountPercent).toDouble();
+          amountToPay = (data['amountToPay'] ?? amountToPay ?? 0).toDouble();
+          vehicleTypeStr = (data['vehicleType'] ?? vehicleTypeStr).toString();
+        });
+      }
     });
   }
 
@@ -183,6 +205,12 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
     if (labelsSnap.exists && labelsSnap.value is Map) {
       labelsMap = Map<String, dynamic>.from(labelsSnap.value as Map);
     }
+
+    // Fetch occupied slots map
+    final occupiedSnap = await root.child('occupied').get();
+    final Map<String, dynamic> occupiedMap = occupiedSnap.exists && occupiedSnap.value is Map
+        ? Map<String, dynamic>.from(occupiedSnap.value as Map)
+        : <String, dynamic>{};
 
     final layoutSnap = await root.child('slotsByFloor').get();
     if (!layoutSnap.exists) {
@@ -201,6 +229,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
           userIsPwd: userIsPwd,
           isCar: vehicleUpper == 'CAR',
           labelsMap: labelsMap,
+          occupiedMap: occupiedMap,
         );
         if (name != null && name.isNotEmpty) return name;
       }
@@ -211,6 +240,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
           userIsPwd: userIsPwd,
           isCar: vehicleUpper == 'CAR',
           labelsMap: labelsMap,
+          occupiedMap: occupiedMap,
         );
         if (name != null && name.isNotEmpty) return name;
       }
@@ -224,6 +254,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
     required bool userIsPwd,
     required bool isCar,
     required Map<String, dynamic> labelsMap,
+    required Map<String, dynamic> occupiedMap,
   }) {
     if (types is! Map) return null;
     // Build candidate keys by fuzzy matching
@@ -255,16 +286,24 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
       final dynamic slotList = types[key];
       if (slotList is List && slotList.isNotEmpty) {
         for (final dynamic item in slotList) {
+          String? candidate;
           if (item is String) {
-            return item; // already a display name
+            candidate = item; // already a display name
           } else if (item is Map) {
-            final String? name = (item['name'] as String?) ?? (item['label'] as String?);
-            if (name != null && name.isNotEmpty) return name;
-            final String? id = item['id']?.toString();
-            if (id != null && labelsMap.containsKey(id)) {
-              final dynamic mapped = labelsMap[id];
-              if (mapped is String && mapped.isNotEmpty) return mapped;
+            candidate = (item['name'] as String?) ?? (item['label'] as String?);
+            if (candidate == null || candidate.isEmpty) {
+              final String? id = item['id']?.toString();
+              if (id != null && labelsMap.containsKey(id)) {
+                final dynamic mapped = labelsMap[id];
+                if (mapped is String && mapped.isNotEmpty) candidate = mapped;
+              }
             }
+          }
+          if (candidate != null && candidate.isNotEmpty) {
+            final keySan = _sanitizeKey(candidate);
+            final occ = occupiedMap[keySan];
+            final bool isOcc = occ is Map ? ((occ['status']?.toString().toUpperCase() ?? '') == 'OCCUPIED') : occ != null;
+            if (!isOcc) return candidate;
           }
         }
       }
@@ -320,7 +359,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
                         children: [
-                          // Permanent QR
+                          // QR only (no details until scanned)
                           Card(
                             elevation: 2,
                             shape: RoundedRectangleBorder(
@@ -347,30 +386,31 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
 
                           const SizedBox(height: 20),
 
-                          // Transaction details
-                          Card(
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                children: [
-                                  _buildDetailRow('Transaction ID', txId),
-                                  _buildDetailRow('Slot', slot),
-                                  _buildDetailRow('Vehicle', vehicleTypeStr.isNotEmpty ? vehicleTypeStr : widget.vehicleType),
-                                  _buildDetailRow('Time In', _formatDateTime(timeIn)),
-                                  _buildDetailRow(
-                                      'Rate/Hour', '₱${ratePerHour.toStringAsFixed(2)}'),
-                                  if (isPWD)
-                                    _buildDetailRow('PWD Discount',
-                                        '${(discountPercent * 100).toStringAsFixed(0)}%'),
-                                  _buildDetailRow('Status', status,
-                                      valueColor: Colors.green),
-                                ],
+                          // Show details only after scanned (timeIn present or status changed)
+                          if (timeIn.isNotEmpty || status != 'PENDING_ENTRY')
+                            Card(
+                              elevation: 2,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  children: [
+                                    _buildDetailRow('Transaction ID', txId),
+                                    _buildDetailRow('Slot', slot.isEmpty ? '-' : slot),
+                                    _buildDetailRow('Vehicle', vehicleTypeStr.isNotEmpty ? vehicleTypeStr : widget.vehicleType),
+                                    _buildDetailRow('Time In', timeIn.isEmpty ? '-' : _formatDateTime(timeIn)),
+                                    _buildDetailRow(
+                                        'Rate/Hour', '₱${ratePerHour.toStringAsFixed(2)}'),
+                                    if (isPWD)
+                                      _buildDetailRow('PWD Discount',
+                                          '${(discountPercent * 100).toStringAsFixed(0)}%'),
+                                    _buildDetailRow('Status', status,
+                                        valueColor: Colors.green),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
 
                           const SizedBox(height: 30),
 
@@ -402,6 +442,18 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                               ),
                             ),
                           ),
+
+                          if (kDebugMode) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: 400,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey),
+                                onPressed: _simulateEntryScan,
+                                child: const Text('Simulate Entry Scan (DEV)'),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -419,5 +471,49 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
     } catch (_) {
       return iso;
     }
+  }
+
+  Future<void> _simulateEntryScan() async {
+    if (txId.isEmpty || uid == null) return;
+    final db = FirebaseDatabase.instance.ref();
+    final now = DateTime.now().toUtc().toIso8601String();
+    final selectedSlotName = await _selectSlotDisplayName(isPWD, vehicleTypeStr.isNotEmpty ? vehicleTypeStr : widget.vehicleType);
+    final slotName = selectedSlotName ?? 'A1';
+    await db.child('transactions/' + txId).update({
+      'status': 'ONGOING',
+      'timeIn': now,
+      'slot': slotName,
+      'discountAmount': 0,
+      'amountToPay': ratePerHour,
+    });
+
+    // Mark slot as occupied for admin monitoring
+    final safeKey = _sanitizeKey(slotName);
+    await db.child('configurations/layout/occupied/' + safeKey).set({
+      'uid': uid,
+      'txId': txId,
+      'status': 'OCCUPIED',
+      'timeIn': now,
+      'vehicleType': vehicleTypeStr.isNotEmpty ? vehicleTypeStr : widget.vehicleType,
+      'slotName': slotName,
+    });
+  }
+
+  String _sanitizeKey(String input) {
+    // Firebase keys cannot contain / . # $ [ ] and control chars
+    return input
+        .replaceAll('/', '_')
+        .replaceAll('.', '_')
+        .replaceAll('#', '_')
+        .replaceAll('[', '(')
+        .replaceAll(']', ')')
+        .replaceAll('\n', ' ')
+        .replaceAll('\r', ' ')
+        .replaceAll('\u0000', '')
+        .replaceAll('\u0008', '')
+        .replaceAll('\u0009', '')
+        .replaceAll('\u000B', '')
+        .replaceAll('\u000C', '')
+        .replaceAll('\u000D', '');
   }
 }
