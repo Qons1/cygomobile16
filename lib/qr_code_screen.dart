@@ -3,12 +3,14 @@ import 'package:slide_to_act/slide_to_act.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:cygo_ps/app_drawer.dart';
 import 'menu/payment_page.dart'; // make sure you have this import
 
 class QRCodeScreen extends StatefulWidget {
   final String vehicleType;
-  const QRCodeScreen({super.key, required this.vehicleType});
+  final String? existingTxId;
+  const QRCodeScreen({super.key, required this.vehicleType, this.existingTxId});
 
   @override
   State<QRCodeScreen> createState() => _QRCodeScreenState();
@@ -19,6 +21,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
   String displayName = 'User';
   String profileImageUrl = '';
   String slot = '';
+  String vehicleTypeStr = '';
   double ratePerHour = 0;
   String timeIn = '';
   String status = 'ONGOING';
@@ -32,7 +35,11 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUserAndCreateTransaction();
+    if (widget.existingTxId != null && widget.existingTxId!.isNotEmpty) {
+      _loadExistingTransaction(widget.existingTxId!);
+    } else {
+      _loadUserAndCreateTransaction();
+    }
   }
 
   Future<void> _loadUserAndCreateTransaction() async {
@@ -86,9 +93,11 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
       });
     }
 
-    // 3. Assign parking slot (temporary logic)
-    slot = widget.vehicleType.toUpperCase() == 'CAR' ? 'A1' : 'M1';
+    // 3. Assign parking slot based on registered layout in Realtime Database
+    final selectedSlotName = await _selectSlotDisplayName(isPWD, widget.vehicleType);
+    slot = selectedSlotName ?? (widget.vehicleType.toUpperCase() == 'CAR' ? 'A1' : 'M1');
     timeIn = DateTime.now().toIso8601String();
+    vehicleTypeStr = widget.vehicleType;
 
     // 4. Calculate fee
     double baseAmount = ratePerHour;
@@ -123,6 +132,144 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
     setState(() {
       saving = false;
     });
+  }
+
+  Future<void> _loadExistingTransaction(String tx) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() {
+        saving = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No authenticated user. Please login.')),
+      );
+      return;
+    }
+    uid = user.uid;
+    displayName = user.displayName ?? (user.email ?? 'User');
+    profileImageUrl = user.photoURL ?? '';
+    qrData = 'CYGO:$uid';
+
+    final db = FirebaseDatabase.instance.ref();
+    final txSnap = await db.child('transactions/$tx').get();
+    if (!txSnap.exists) {
+      setState(() {
+        saving = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active transaction found.')),
+      );
+      return;
+    }
+    final data = Map<String, dynamic>.from(txSnap.value as Map);
+    txId = (data['txId'] ?? tx).toString();
+    slot = (data['slot'] ?? '').toString();
+    timeIn = (data['timeIn'] ?? '').toString();
+    status = (data['status'] ?? 'ONGOING').toString();
+    ratePerHour = (data['ratePerHour'] ?? 0).toDouble();
+    discountPercent = (data['discountPercent'] ?? 0).toDouble();
+    amountToPay = (data['amountToPay'] ?? 0).toDouble();
+    vehicleTypeStr = (data['vehicleType'] ?? widget.vehicleType).toString();
+
+    setState(() {
+      saving = false;
+    });
+  }
+
+  Future<String?> _selectSlotDisplayName(bool userIsPwd, String vehicleType) async {
+    final DatabaseReference root = FirebaseDatabase.instance.ref('configurations/layout');
+    final labelsSnap = await root.child('labels').get();
+    Map<String, dynamic> labelsMap = {};
+    if (labelsSnap.exists && labelsSnap.value is Map) {
+      labelsMap = Map<String, dynamic>.from(labelsSnap.value as Map);
+    }
+
+    final layoutSnap = await root.child('slotsByFloor').get();
+    if (!layoutSnap.exists) {
+      return null;
+    }
+
+    final String vehicleUpper = vehicleType.toUpperCase();
+
+    final dynamic floorsVal = layoutSnap.value;
+
+    if (floorsVal is Map) {
+      for (final dynamic entry in floorsVal.entries) {
+        final dynamic types = entry.value;
+        final String? name = _pickFromTypesFlexible(
+          types,
+          userIsPwd: userIsPwd,
+          isCar: vehicleUpper == 'CAR',
+          labelsMap: labelsMap,
+        );
+        if (name != null && name.isNotEmpty) return name;
+      }
+    } else if (floorsVal is List) {
+      for (final dynamic types in floorsVal) {
+        final String? name = _pickFromTypesFlexible(
+          types,
+          userIsPwd: userIsPwd,
+          isCar: vehicleUpper == 'CAR',
+          labelsMap: labelsMap,
+        );
+        if (name != null && name.isNotEmpty) return name;
+      }
+    }
+
+    return null;
+  }
+
+  String? _pickFromTypesFlexible(
+    dynamic types, {
+    required bool userIsPwd,
+    required bool isCar,
+    required Map<String, dynamic> labelsMap,
+  }) {
+    if (types is! Map) return null;
+    // Build candidate keys by fuzzy matching
+    final List<String> keys = types.keys.map((k) => k.toString()).toList();
+    final List<String> ordered = [];
+    for (final k in keys) {
+      final kl = k.toLowerCase();
+      final isPwdKey = kl.contains('pwd') || kl.contains('accessible') || kl.contains('handicap');
+      final isCarKey = kl.contains('car') || kl.contains('four') || kl.contains('4');
+      final isMotorKey = kl.contains('motor') || kl.contains('bike') || kl.contains('2');
+      final vehicleMatch = isCar ? isCarKey || !isMotorKey : isMotorKey || !isCarKey;
+      if (userIsPwd) {
+        if (isPwdKey && vehicleMatch) ordered.add(k);
+      }
+    }
+    // If no PWD-specific keys found (or user not PWD), fall back to general type keys
+    if (ordered.isEmpty) {
+      for (final k in keys) {
+        final kl = k.toLowerCase();
+        final isPwdKey = kl.contains('pwd') || kl.contains('accessible') || kl.contains('handicap');
+        if (isPwdKey) continue; // skip PWD group when not needed
+        final isCarKey = kl.contains('car') || kl.contains('four') || kl.contains('4');
+        final isMotorKey = kl.contains('motor') || kl.contains('bike') || kl.contains('2');
+        final vehicleMatch = isCar ? isCarKey || !isMotorKey : isMotorKey || !isCarKey;
+        if (vehicleMatch) ordered.add(k);
+      }
+    }
+    for (final key in ordered) {
+      final dynamic slotList = types[key];
+      if (slotList is List && slotList.isNotEmpty) {
+        for (final dynamic item in slotList) {
+          if (item is String) {
+            return item; // already a display name
+          } else if (item is Map) {
+            final String? name = (item['name'] as String?) ?? (item['label'] as String?);
+            if (name != null && name.isNotEmpty) return name;
+            final String? id = item['id']?.toString();
+            if (id != null && labelsMap.containsKey(id)) {
+              final dynamic mapped = labelsMap[id];
+              if (mapped is String && mapped.isNotEmpty) return mapped;
+            }
+          }
+        }
+      }
+    }
+    return null;
   }
 
   Widget _buildDetailRow(String label, String value, {Color? valueColor}) {
@@ -211,8 +358,8 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                                 children: [
                                   _buildDetailRow('Transaction ID', txId),
                                   _buildDetailRow('Slot', slot),
-                                  _buildDetailRow('Vehicle', widget.vehicleType),
-                                  _buildDetailRow('Time In', timeIn),
+                                  _buildDetailRow('Vehicle', vehicleTypeStr.isNotEmpty ? vehicleTypeStr : widget.vehicleType),
+                                  _buildDetailRow('Time In', _formatDateTime(timeIn)),
                                   _buildDetailRow(
                                       'Rate/Hour', '₱${ratePerHour.toStringAsFixed(2)}'),
                                   if (isPWD)
@@ -263,5 +410,14 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
               ),
             ),
     );
+  }
+
+  String _formatDateTime(String iso) {
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      return DateFormat('MM-dd-yyyy hh:mm a').format(dt);
+    } catch (_) {
+      return iso;
+    }
   }
 }

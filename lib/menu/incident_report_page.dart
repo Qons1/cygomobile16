@@ -1,6 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 class IncidentReportPage extends StatefulWidget {
   const IncidentReportPage({super.key});
@@ -11,11 +15,15 @@ class IncidentReportPage extends StatefulWidget {
 
 class _IncidentReportPageState extends State<IncidentReportPage> {
   final TextEditingController descriptionController = TextEditingController();
+  final ImagePicker _picker = ImagePicker();
   File? _image;
+  bool _submitting = false;
 
-  Future<void> _pickImage() async {
-    final pickedFile =
-        await ImagePicker().pickImage(source: ImageSource.camera); // Or ImageSource.gallery
+  static const String cloudName = 'dy5kbbskp';
+  static const String uploadPreset = 'reports_img';
+
+  Future<void> _pickImage(ImageSource source) async {
+    final pickedFile = await _picker.pickImage(source: source, imageQuality: 85);
     if (pickedFile != null) {
       setState(() {
         _image = File(pickedFile.path);
@@ -23,49 +31,101 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
     }
   }
 
+  Future<String?> _uploadToCloudinary(File file) async {
+    final uri = Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/image/upload');
+    final req = http.MultipartRequest('POST', uri)
+      ..fields['upload_preset'] = uploadPreset
+      ..files.add(await http.MultipartFile.fromPath('file', file.path));
+    final resp = await req.send();
+    final body = await resp.stream.bytesToString();
+    if (resp.statusCode == 200 || resp.statusCode == 201) {
+      final jsonBody = json.decode(body) as Map<String, dynamic>;
+      return jsonBody['secure_url'] as String?;
+    }
+    return null;
+  }
+
+  Future<void> _submitReport() async {
+    if (_image == null || _submitting) return;
+    setState(() => _submitting = true);
+    try {
+      final url = await _uploadToCloudinary(_image!);
+      if (url == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Image upload failed')));
+        return;
+      }
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'anonymous';
+      final ref = FirebaseDatabase.instance.ref('incidents').push();
+      await ref.set({
+        'uid': uid,
+        'description': descriptionController.text.trim(),
+        'imageUrl': url,
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
+        'status': 'OPEN',
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Incident submitted')));
+      setState(() {
+        _image = null;
+        descriptionController.clear();
+      });
+    } finally {
+      setState(() => _submitting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Report Incident"),
-        backgroundColor: Colors.amber,
-      ),
+      appBar: AppBar(title: const Text("Report Incident"), backgroundColor: Colors.amber),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
             _image != null
-                ? Image.file(_image!, height: 200)
+                ? Image.file(_image!, height: 220)
                 : Container(
-                    height: 200,
+                    height: 220,
+                    alignment: Alignment.center,
                     color: Colors.grey[300],
-                    child: const Center(
-                      child: Text("No image selected"),
-                    ),
+                    child: const Text("No image selected"),
                   ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-              onPressed: _pickImage,
-              icon: const Icon(Icons.camera_alt),
-              label: const Text("Capture Incident Photo"),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _pickImage(ImageSource.camera),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+                    icon: const Icon(Icons.camera_alt),
+                    label: const Text("Camera"),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _pickImage(ImageSource.gallery),
+                    icon: const Icon(Icons.photo_library),
+                    label: const Text("Gallery"),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             TextField(
               controller: descriptionController,
               maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: "Incident Description",
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: "Incident Description", border: OutlineInputBorder()),
             ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-              onPressed: () {
-                // Submit report logic
-              },
-              child: const Text("Submit Report"),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _submitting ? null : _submitReport,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+                child: _submitting
+                    ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                    : const Text("Submit Report"),
+              ),
             ),
           ],
         ),

@@ -18,11 +18,15 @@ class FirebaseService {
     });
   }
 
-  /// Save PWD request with uploaded image
-  Future<void> submitPWDRequest(String imageUrl) async {
+  /// Save PWD request with uploaded image and PWD number
+  Future<void> submitPWDRequest({
+    required String imageUrl,
+    required String pwdNumber,
+  }) async {
     final uid = _auth.currentUser!.uid;
     await _db.child("pwdRequests/$uid").set({
       "imageUrl": imageUrl,
+      "pwdNumber": pwdNumber,
       "status": "pending"
     });
 

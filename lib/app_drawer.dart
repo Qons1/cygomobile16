@@ -1,11 +1,14 @@
 // app_drawer.dart
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'welcome_screen.dart';
 import 'menu/apply_pwd_page.dart';
 import 'menu/transaction_history_page.dart';
 import 'menu/incident_report_page.dart';
 import 'menu/payment_page.dart';
 import 'menu/edit_profile_page.dart'; // Import your EditProfilePage
+import 'qr_code_screen.dart';
 
 
 class AppDrawer extends StatelessWidget {
@@ -20,26 +23,62 @@ class AppDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final String? uid = user?.uid;
     return Drawer(
       child: SafeArea(
         child: Column(
           children: [
             const SizedBox(height: 20),
 
-            // Profile picture
-            CircleAvatar(
-              radius: 50,
-              backgroundImage: profileImageUrl.isNotEmpty
-                  ? NetworkImage(profileImageUrl)
-                  : const AssetImage('assets/profile.png') as ImageProvider,
-            ),
-            const SizedBox(height: 10),
-
-            // User name
-            Text(
-              userName,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            // Profile picture + name (live from Realtime Database)
+            if (uid == null) ...[
+              CircleAvatar(
+                radius: 50,
+                backgroundImage: profileImageUrl.isNotEmpty
+                    ? NetworkImage(profileImageUrl)
+                    : const AssetImage('assets/profile.png') as ImageProvider,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                userName,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ] else ...[
+              StreamBuilder<DatabaseEvent>(
+                stream: FirebaseDatabase.instance.ref('users/' + uid).onValue,
+                builder: (context, snapshot) {
+                  String display = userName;
+                  String photo = profileImageUrl;
+                  if (snapshot.hasData && snapshot.data!.snapshot.value is Map) {
+                    final data = Map<String, dynamic>.from(snapshot.data!.snapshot.value as Map);
+                    if (data['displayName'] is String && (data['displayName'] as String).isNotEmpty) {
+                      display = data['displayName'] as String;
+                    }
+                    if (data['profileImageUrl'] is String && (data['profileImageUrl'] as String).isNotEmpty) {
+                      photo = data['profileImageUrl'] as String;
+                    } else if (user?.photoURL != null && user!.photoURL!.isNotEmpty) {
+                      photo = user.photoURL!;
+                    }
+                  }
+                  return Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundImage: photo.isNotEmpty
+                            ? NetworkImage(photo)
+                            : const AssetImage('assets/profile.png') as ImageProvider,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        display,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
 
             const SizedBox(height: 10),
 
@@ -67,14 +106,36 @@ class AppDrawer extends StatelessWidget {
             const Divider(),
 
             // Menu items
-            _drawerMenuItem(
-              context,
-              icon: Icons.home,
-              label: "Home",
-              page: WelcomeScreen(
-                userName: userName,
-                profileImageUrl: profileImageUrl,
-              ),
+            ListTile(
+              leading: const Icon(Icons.home, color: Colors.black),
+              title: const Text("Home", style: TextStyle(fontSize: 16)),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  final u = FirebaseAuth.instance.currentUser;
+                  if (u != null) {
+                    final snap = await FirebaseDatabase.instance.ref('users/' + u.uid).get();
+                    final activeTx = snap.child('activeTransaction').value?.toString();
+                    if (activeTx != null && activeTx.isNotEmpty) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => QRCodeScreen(vehicleType: 'CAR', existingTxId: activeTx)),
+                        (route) => false,
+                      );
+                      return;
+                    }
+                  }
+                } catch (_) {}
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(
+                    builder: (_) => WelcomeScreen(
+                      userName: userName,
+                      profileImageUrl: profileImageUrl,
+                    ),
+                  ),
+                  (route) => false,
+                );
+              },
             ),
             _drawerMenuItem(
               context,
@@ -133,8 +194,10 @@ class AppDrawer extends StatelessWidget {
       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
       onTap: () {
         Navigator.pop(context); // Close drawer
-        Navigator.pushReplacement(
-            context, MaterialPageRoute(builder: (_) => page));
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => page),
+          (route) => false,
+        );
       },
     );
   }

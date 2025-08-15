@@ -11,6 +11,8 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  final nameController = TextEditingController();
+  final contactController = TextEditingController();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   bool loading = false;
@@ -36,10 +38,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       // Save user details in Realtime Database
       await FirebaseDatabase.instance.ref("users/$uid").set({
+        "displayName": nameController.text.trim(),
+        "contactNumber": contactController.text.trim(),
         "email": emailController.text.trim(),
         "isPWD": false,
         "pwdStatus": "none",
         "qrCodeData": qrCodeData,
+        "activeTransaction": null
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -60,53 +65,84 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Image.asset(
-              'assets/image.png',
-              height: 300,
-              width: 300,
-            ),
-            const SizedBox(height: 50.0),
-            TextField(
-              controller: emailController,
-              decoration: const InputDecoration(
-                labelText: "Email",
-                border: OutlineInputBorder(),
+        child: SingleChildScrollView( // prevents overflow when keyboard opens
+          child: Column(
+            children: [
+              Image.asset(
+                'assets/image.png',
+                height: 200,
+                width: 200,
               ),
-            ),
-            const SizedBox(height: 16.0),
-            TextField(
-              controller: passwordController,
-              decoration: const InputDecoration(
-                labelText: "Password",
-                border: OutlineInputBorder(),
-              ),
-              obscureText: true,
-            ),
-            const SizedBox(height: 200.0),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color.fromRGBO(251, 255, 18, 1),
+              const SizedBox(height: 20.0),
+
+              // Name input
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: "Full Name",
+                  border: OutlineInputBorder(),
                 ),
-                onPressed: loading ? null : register,
-                child: loading
-                    ? const CircularProgressIndicator()
-                    : const Text("Register"),
               ),
-            ),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context); // go back to home
-                },
-                child: const Text("Cancel"),
+              const SizedBox(height: 16.0),
+
+              // Contact input
+              TextField(
+                controller: contactController,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: "Contact Number",
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 16.0),
+
+              // Email input
+              TextField(
+                controller: emailController,
+                decoration: const InputDecoration(
+                  labelText: "Email",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16.0),
+
+              // Password input
+              TextField(
+                controller: passwordController,
+                decoration: const InputDecoration(
+                  labelText: "Password",
+                  border: OutlineInputBorder(),
+                ),
+                obscureText: true,
+              ),
+              const SizedBox(height: 30.0),
+
+              // Register button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color.fromRGBO(251, 255, 18, 1),
+                  ),
+                  onPressed: loading ? null : register,
+                  child: loading
+                      ? const CircularProgressIndicator()
+                      : const Text("Register"),
+                ),
+              ),
+
+              // Cancel button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context); // go back to home
+                  },
+                  child: const Text("Cancel"),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

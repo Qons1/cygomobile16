@@ -2,6 +2,8 @@ import 'package:cygo_ps/register_screen.dart';
 import 'package:cygo_ps/welcome_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:cygo_ps/qr_code_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -82,15 +84,30 @@ class _LoginScreenState extends State<LoginScreen> {
                         setState(() => loading = false);
 
                         if (success) {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => WelcomeScreen(
-                                userName: emailController.text.trim(),
-                                profileImageUrl: '', // Provide actual URL if available
+                          final user = FirebaseAuth.instance.currentUser;
+                          if (user != null) {
+                            final snap = await FirebaseDatabase.instance.ref('users/' + user.uid).get();
+                            final activeTx = snap.child('activeTransaction').value?.toString();
+                            if (activeTx != null && activeTx.isNotEmpty) {
+                              Navigator.of(context).pushAndRemoveUntil(
+                                MaterialPageRoute(builder: (_) => QRCodeScreen(vehicleType: 'CAR', existingTxId: activeTx)),
+                                (route) => false,
+                              );
+                              return;
+                            }
+                            final display = (snap.child('displayName').value?.toString() ?? user.displayName ?? user.email ?? 'User');
+                            final photo = (snap.child('profileImageUrl').value?.toString() ?? user.photoURL ?? '');
+                            Navigator.of(context).pushAndRemoveUntil(
+                              MaterialPageRoute(
+                                builder: (context) => WelcomeScreen(
+                                  userName: display,
+                                  profileImageUrl: photo,
+                                ),
                               ),
-                            ),
-                          );
+                              (route) => false,
+                            );
+                            return;
+                          }
                         }
                       },
                 child: loading
