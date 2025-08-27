@@ -1,12 +1,11 @@
 // payment_page.dart
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cygo_ps/app_drawer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class PaymentPage extends StatefulWidget {
   const PaymentPage({super.key});
@@ -27,7 +26,12 @@ class _PaymentPageState extends State<PaymentPage> {
   double amountToPay = 0;
   String? txId;
   bool loading = true;
-  bool paying = false;
+  bool paying = false; // deprecated, kept for state; we'll switch to submitting
+  bool submitting = false;
+  final String gcashName = 'Your GCash Name';
+  final String gcashNumber = '09XXXXXXXXX';
+  final String gcashNote = 'Use your Tx ID as reference';
+  final TextEditingController _referenceController = TextEditingController();
 
   @override
   void initState() {
@@ -66,44 +70,111 @@ class _PaymentPageState extends State<PaymentPage> {
     discountAmount = (data['discountAmount'] ?? 0).toDouble();
     amountToPay = (data['amountToPay'] ?? 0).toDouble();
 
+    // Fallback compute if amountToPay not yet set in DB but timeIn exists
+    if (amountToPay <= 0 && (timeIn.isNotEmpty)) {
+      try {
+        final DateTime inDt = DateTime.parse(timeIn).toLocal();
+        final DateTime outDt = timeOut != null && timeOut!.isNotEmpty
+            ? DateTime.parse(timeOut!).toLocal()
+            : DateTime.now();
+        final totalMinutes = outDt.difference(inDt).inMinutes;
+        final hours = (totalMinutes / 60.0);
+        final billedHours = hours <= 1.0 ? 1.0 : hours.ceilToDouble();
+        final base = billedHours * ratePerHour;
+        final discount = base * discountPercent;
+        discountAmount = discount;
+        amountToPay = (base - discount).clamp(0.0, double.infinity);
+      } catch (_) {}
+    }
+
     setState(() => loading = false);
   }
 
-  Future<void> _startGcashPayment() async {
-    if (txId == null || paying) return;
-    setState(() => paying = true);
-
-    try {
-      // Replace with your backend endpoint that creates a GCash source/checkout session
-      // The backend should call PayMongo/Maya API with your secret key and return a checkout URL
-      final uri = Uri.parse('https://your-backend.example.com/gcash/create');
-      final resp = await http.post(uri,
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode({
-            'txId': txId,
-            'amount': (amountToPay * 100).round(), // in cents
-            'description': 'Parking fee for slot ' + slot,
-          }));
-      if (resp.statusCode != 200) {
-        throw Exception('Unable to initiate GCash payment');
+  Future<void> _submitReference() async {
+    if (txId == null || submitting) return;
+    if (amountToPay <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Total fee not available yet. Ensure your QR was scanned at entry.')),
+        );
       }
-      final jsonBody = json.decode(resp.body) as Map<String, dynamic>;
-      final checkoutUrl = jsonBody['checkoutUrl'] as String?;
-      if (checkoutUrl == null) throw Exception('No checkout URL');
-
-      final uriToLaunch = Uri.parse(checkoutUrl);
-      if (await canLaunchUrl(uriToLaunch)) {
-        await launchUrl(uriToLaunch, mode: LaunchMode.externalApplication);
-      } else {
-        throw Exception('Cannot open GCash URL');
+      return;
+    }
+    final refNum = _referenceController.text.trim();
+    if (refNum.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your GCash reference number.')),
+      );
+      return;
+    }
+    setState(() => submitting = true);
+    try {
+      final db = FirebaseDatabase.instance.ref();
+      await db.child('payments/' + txId!).set({
+        'txId': txId,
+        'amount': amountToPay,
+        'method': 'GCASH_DIRECT',
+        'referenceNumber': refNum,
+        'status': 'PENDING_VERIFICATION',
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+      });
+      await db.child('transactions/' + txId!).update({
+        'status': 'AWAITING_CONFIRMATION',
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Reference submitted. We will verify your payment shortly.')),
+        );
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Payment failed: ' + e.toString())));
+            .showSnackBar(SnackBar(content: Text('Failed to submit reference: ' + e.toString())));
       }
     } finally {
-      if (mounted) setState(() => paying = false);
+      if (mounted) setState(() => submitting = false);
+    }
+  }
+
+  Future<void> _openGCashToPay() async {
+    if (amountToPay <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Total fee not available yet. Ensure your QR was scanned at entry.')),
+        );
+      }
+      return;
+    }
+
+    final String note = (txId ?? '').isNotEmpty
+        ? ('TxID: ' + txId!)
+        : gcashNote;
+
+    // Try a few possible GCash deep links. If none work, fall back to copying details.
+    final List<Uri> candidates = [
+      Uri.parse('gcash://sendmoney?mobile=' + Uri.encodeComponent(gcashNumber) + '&amount=' + Uri.encodeComponent(amountToPay.toStringAsFixed(2)) + '&message=' + Uri.encodeComponent(note)),
+      Uri.parse('gcash://pay?phone=' + Uri.encodeComponent(gcashNumber) + '&amount=' + Uri.encodeComponent(amountToPay.toStringAsFixed(2)) + '&note=' + Uri.encodeComponent(note)),
+      Uri.parse('gcash://app'),
+    ];
+
+    for (final uri in candidates) {
+      try {
+        if (await canLaunchUrl(uri)) {
+          final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+          if (launched) return;
+        }
+      } catch (_) {}
+    }
+
+    // Fallback: copy details to clipboard and instruct user to open GCash manually
+    await Clipboard.setData(ClipboardData(
+      text: 'GCash: ' + gcashNumber + ' | Amount: ' + amountToPay.toStringAsFixed(2) + ' | ' + note,
+    ));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Details copied. Open GCash and paste to complete payment.')),
+      );
     }
   }
 
@@ -138,15 +209,73 @@ class _PaymentPageState extends State<PaymentPage> {
                   _row('Total Fee', amountToPay.toStringAsFixed(2), isBold: true),
                   const SizedBox(height: 24),
 
+                  Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('GCash Receiver Details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          _row('Account Name', gcashName),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Account Number', style: TextStyle(fontWeight: FontWeight.bold)),
+                              Row(children: [
+                                Text(gcashNumber),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.copy, size: 18),
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: gcashNumber));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('GCash number copied')),
+                                    );
+                                  },
+                                )
+                              ])
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(gcashNote),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: paying ? null : _startGcashPayment,
+                      onPressed: _openGCashToPay,
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
                       icon: const Icon(Icons.account_balance_wallet),
-                      label: paying
+                      label: const Text('Pay with GCash'),
+                    ),
+                  ),
+
+                  TextField(
+                    controller: _referenceController,
+                    decoration: const InputDecoration(
+                      labelText: 'Enter GCash Reference Number',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: submitting ? null : _submitReference,
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+                      child: submitting
                           ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                          : const Text('Pay via GCash'),
+                          : const Text('Submit Payment Reference'),
                     ),
                   ),
                 ],
