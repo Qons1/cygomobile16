@@ -8,6 +8,7 @@ import 'menu/transaction_history_page.dart';
 import 'menu/incident_report_page.dart';
 import 'menu/payment_page.dart';
 import 'menu/edit_profile_page.dart'; // Import your EditProfilePage
+import 'login_screen.dart';
 import 'qr_code_screen.dart';
 
 
@@ -174,8 +175,24 @@ class AppDrawer extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.amber,
                 ),
-                onPressed: () {
-                  // Handle logout
+                onPressed: () async {
+                  try {
+                    await FirebaseAuth.instance.signOut();
+                    if (context.mounted) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          builder: (context) => const LoginScreen(),
+                        ),
+                        (route) => false,
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Logout failed: ' + e.toString())),
+                      );
+                    }
+                  }
                 },
                 child: const Text("LOGOUT"),
               ),
