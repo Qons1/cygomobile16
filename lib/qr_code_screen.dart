@@ -26,6 +26,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
   String vehicleTypeStr = '';
   double ratePerHour = 0;
   String timeIn = '';
+  String timeOut = '';
   String status = 'PENDING_ENTRY';
   String txId = '';
   bool saving = true;
@@ -189,6 +190,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
         setState(() {
           slot = (data['slot'] ?? '').toString();
           timeIn = (data['timeIn'] ?? '').toString();
+          timeOut = (data['timeOut'] ?? '').toString();
           status = (data['status'] ?? status).toString();
           ratePerHour = (data['ratePerHour'] ?? ratePerHour).toDouble();
           discountPercent = (data['discountPercent'] ?? discountPercent).toDouble();
@@ -401,8 +403,8 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                                     _buildDetailRow('Slot', slot.isEmpty ? '-' : slot),
                                     _buildDetailRow('Vehicle', vehicleTypeStr.isNotEmpty ? vehicleTypeStr : widget.vehicleType),
                                     _buildDetailRow('Time In', timeIn.isEmpty ? '-' : _formatDateTime(timeIn)),
-                                    if (ratePerHour > 0)
-                                      _buildDetailRow('Total Fee', '₱${ratePerHour.toStringAsFixed(2)}'),
+                                    if (amountToPay > 0)
+                                      _buildDetailRow('Total Fee', '₱${amountToPay.toStringAsFixed(2)}'),
                                     if (isPWD)
                                       _buildDetailRow('PWD Discount',
                                           '${(discountPercent * 100).toStringAsFixed(0)}%'),
@@ -444,7 +446,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                                 ),
                               ),
                             )
-                          else if (status == 'COMPLETED' || timeOut.isNotEmpty)
+                          else if (timeOut.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.all(16.0),
                               child: SizedBox(

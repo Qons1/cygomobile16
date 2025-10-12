@@ -27,6 +27,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   int carCount = 0;
   int motorCount = 0;
   Stream<DatabaseEvent>? _sub;
+  late final Stream<DatabaseEvent> _occStream;
+  String _nowText = '';
+  late final Ticker _ticker;
 
   @override
   void initState() {
@@ -36,7 +39,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       final data = event.snapshot.value;
       int newCar = 0;
       int newMotor = 0;
-
       if (data is Map) {
         data.forEach((floor, types) {
           if (types is Map) {
@@ -56,12 +58,34 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           }
         }
       }
-
-      setState(() {
-        carCount = newCar;
-        motorCount = newMotor;
+      // subtract occupied
+      int occCar = 0, occMotor = 0;
+      // read once for current value
+      // use occupied path; if missing, treat as zero
+      // we do a quick async read; UI updates next tick
+      FirebaseDatabase.instance.ref('/configurations/layout/occupied').get().then((snap){
+        if (snap.exists && snap.value is Map) {
+          final occ = Map<String, dynamic>.from(snap.value as Map);
+          occ.forEach((k,v){
+            if (v is Map) {
+              final st = (v['status'] ?? '').toString().toUpperCase();
+              if (st == 'OCCUPIED') {
+                final type = (v['vehicleType'] ?? '').toString().toUpperCase();
+                if (type == 'MOTORCYCLE') occMotor++; else occCar++;
+              }
+            }
+          });
+        }
+        setState((){
+          carCount = (newCar - occCar).clamp(0, newCar);
+          motorCount = (newMotor - occMotor).clamp(0, newMotor);
+        });
       });
     });
+
+    // live clock
+    _nowText = _formatNow();
+    _tickClock();
   }
 
   int _countSlots(dynamic list) {
@@ -70,6 +94,19 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       return list.length;
     }
     return 0;
+  }
+
+  void _tickClock() async {
+    // simple timer using periodic Future
+    while (mounted) {
+      await Future.delayed(const Duration(seconds: 1));
+      setState(() { _nowText = _formatNow(); });
+    }
+  }
+
+  String _formatNow(){
+    final now = DateTime.now();
+    return "${now.month}/${now.day}/${now.year} ${now.hour % 12 == 0 ? 12 : now.hour % 12}:${now.minute.toString().padLeft(2,'0')} ${now.hour>=12?'PM':'AM'}";
   }
 
   @override
@@ -110,6 +147,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             ),
             const SizedBox(height: 20),
             const Text("Available Slots", style: TextStyle(fontSize: 18)),
+            const SizedBox(height: 6),
+            Text(_nowText, style: const TextStyle(fontSize: 14)),
             const SizedBox(height: 10),
             Container(
               width: 500,
