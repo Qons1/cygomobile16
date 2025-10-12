@@ -27,9 +27,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   int carCount = 0;
   int motorCount = 0;
   Stream<DatabaseEvent>? _sub;
-  late final Stream<DatabaseEvent> _occStream;
   String _nowText = '';
-  late final Ticker _ticker;
 
   @override
   void initState() {
