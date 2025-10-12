@@ -5,8 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'mockpay_page.dart';
+import '../qr_code_screen.dart';
 
 class PaymentPage extends StatefulWidget {
   const PaymentPage({super.key});
@@ -26,13 +26,12 @@ class _PaymentPageState extends State<PaymentPage> {
   double discountAmount = 0;
   double amountToPay = 0;
   String? txId;
+  String txStatus = '';
+  String txVehicleType = 'CAR';
   bool loading = true;
   bool paying = false; // deprecated, kept for state; we'll switch to submitting
   bool submitting = false;
-  final String gcashName = 'Your GCash Name';
-  final String gcashNumber = '09XXXXXXXXX';
-  final String gcashNote = 'Use your Tx ID as reference';
-  final TextEditingController _referenceController = TextEditingController();
+  final String gcashName = 'CYGO Parking';
 
   @override
   void initState() {
@@ -70,12 +69,14 @@ class _PaymentPageState extends State<PaymentPage> {
     discountPercent = (data['discountPercent'] ?? 0).toDouble();
     discountAmount = (data['discountAmount'] ?? 0).toDouble();
     amountToPay = (data['amountToPay'] ?? 0).toDouble();
+    txStatus = (data['status'] ?? '').toString();
+    txVehicleType = (data['vehicleType'] ?? 'CAR').toString();
 
-    // Fallback compute if amountToPay not yet set in DB but timeIn exists
-    if (amountToPay <= 0 && (timeIn.isNotEmpty)) {
+    // Compute based on time consumed
+    if (timeIn.isNotEmpty) {
       try {
         final DateTime inDt = DateTime.parse(timeIn).toLocal();
-        final DateTime outDt = timeOut != null && timeOut!.isNotEmpty
+        final DateTime outDt = (timeOut != null && timeOut!.isNotEmpty)
             ? DateTime.parse(timeOut!).toLocal()
             : DateTime.now();
         final totalMinutes = outDt.difference(inDt).inMinutes;
@@ -91,53 +92,6 @@ class _PaymentPageState extends State<PaymentPage> {
     setState(() => loading = false);
   }
 
-  Future<void> _submitReference() async {
-    if (txId == null || submitting) return;
-    if (amountToPay <= 0) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Total fee not available yet. Ensure your QR was scanned at entry.')),
-        );
-      }
-      return;
-    }
-    final refNum = _referenceController.text.trim();
-    if (refNum.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your GCash reference number.')),
-      );
-      return;
-    }
-    setState(() => submitting = true);
-    try {
-      final db = FirebaseDatabase.instance.ref();
-      await db.child('payments/' + txId!).set({
-        'txId': txId,
-        'amount': amountToPay,
-        'method': 'GCASH_DIRECT',
-        'referenceNumber': refNum,
-        'status': 'PENDING_VERIFICATION',
-        'createdAt': DateTime.now().toUtc().toIso8601String(),
-      });
-      await db.child('transactions/' + txId!).update({
-        'status': 'AWAITING_CONFIRMATION',
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Reference submitted. We will verify your payment shortly.')),
-        );
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to submit reference: ' + e.toString())));
-      }
-    } finally {
-      if (mounted) setState(() => submitting = false);
-    }
-  }
-
   Future<void> _openGCashToPay() async {
     if (amountToPay <= 0) {
       if (mounted) {
@@ -147,35 +101,22 @@ class _PaymentPageState extends State<PaymentPage> {
       }
       return;
     }
-
-    final String note = (txId ?? '').isNotEmpty
-        ? ('TxID: ' + txId!)
-        : gcashNote;
-
-    // Try a few possible GCash deep links. If none work, fall back to copying details.
-    final List<Uri> candidates = [
-      Uri.parse('gcash://sendmoney?mobile=' + Uri.encodeComponent(gcashNumber) + '&amount=' + Uri.encodeComponent(amountToPay.toStringAsFixed(2)) + '&message=' + Uri.encodeComponent(note)),
-      Uri.parse('gcash://pay?phone=' + Uri.encodeComponent(gcashNumber) + '&amount=' + Uri.encodeComponent(amountToPay.toStringAsFixed(2)) + '&note=' + Uri.encodeComponent(note)),
-      Uri.parse('gcash://app'),
-    ];
-
-    for (final uri in candidates) {
-      try {
-        if (await canLaunchUrl(uri)) {
-          final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-          if (launched) return;
-        }
-      } catch (_) {}
-    }
-
-    // Fallback: copy details to clipboard and instruct user to open GCash manually
-    await Clipboard.setData(ClipboardData(
-      text: 'GCash: ' + gcashNumber + ' | Amount: ' + amountToPay.toStringAsFixed(2) + ' | ' + note,
-    ));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Details copied. Open GCash and paste to complete payment.')),
-      );
+    final changed = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MockPayPage(txId: txId!, amount: amountToPay, merchantName: 'CYGO Parking'),
+      ),
+    );
+    if (changed == true) {
+      await _loadActiveTransaction();
+      if (txStatus.toUpperCase() == 'COMPLETED' && mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => QRCodeScreen(vehicleType: txVehicleType, existingTxId: txId!),
+          ),
+        );
+      }
     }
   }
 
@@ -224,96 +165,28 @@ class _PaymentPageState extends State<PaymentPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Transaction Details',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text('Payment', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
-                  _row('Slot', slot),
-                  _row('Time In', _formatDateTime(timeIn)),
-                  _row('Time Out', timeOut == null ? '-' : _formatDateTime(timeOut!)),
-                  _row('Rate/Hour', ratePerHour.toStringAsFixed(2)),
-                  _row('Discount %', (discountPercent * 100).toStringAsFixed(0) + '%'),
-                  _row('Discount Amount', discountAmount.toStringAsFixed(2)),
+                  _row('Slot', slot.isEmpty ? '-' : slot),
+                  _row('Time In', timeIn.isEmpty ? '-' : _formatDateTime(timeIn)),
                   const Divider(),
-                  _row('Total Fee', amountToPay.toStringAsFixed(2), isBold: true),
+                  _row('Total Fee', '₱' + amountToPay.toStringAsFixed(2), isBold: true),
                   const SizedBox(height: 24),
-
-                  Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('GCash Receiver Details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
-                          _row('Account Name', gcashName),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Account Number', style: TextStyle(fontWeight: FontWeight.bold)),
-                              Row(children: [
-                                Text(gcashNumber),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  icon: const Icon(Icons.copy, size: 18),
-                                  onPressed: () {
-                                    Clipboard.setData(ClipboardData(text: gcashNumber));
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('GCash number copied')),
-                                    );
-                                  },
-                                )
-                              ])
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(gcashNote),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _openGCashToPay,
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-                      icon: const Icon(Icons.account_balance_wallet),
-                      label: const Text('Pay with GCash'),
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: _openMockPay,
-                      child: const Text('Pay (Mock GCash in-app)'),
-                    ),
-                  ),
-
-                  TextField(
-                    controller: _referenceController,
-                    decoration: const InputDecoration(
-                      labelText: 'Enter GCash Reference Number',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: submitting ? null : _submitReference,
+                      onPressed: _openGCashToPay,
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-                      child: submitting
-                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                          : const Text('Submit Payment Reference'),
+                      child: const Text('Pay with GCash'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade300, foregroundColor: Colors.black),
+                      child: const Text('Cancel'),
                     ),
                   ),
                 ],

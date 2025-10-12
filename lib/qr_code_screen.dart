@@ -421,7 +421,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                               width: 400,
                               child: SlideAction(
                                 borderRadius: 25,
-                                text: "Slide to Proceed to Payment",
+                                text: "Done Transaction",
                                 textStyle: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 16,
@@ -429,16 +429,19 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                                 ),
                                 outerColor: Colors.amber,
                                 innerColor: Colors.white,
-                                onSubmit: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => const PaymentPage(),
-                                    ),
-                                  );
+                                onSubmit: () async {
+                                  try {
+                                    if (txId.isNotEmpty) {
+                                      final db = FirebaseDatabase.instance.ref();
+                                      await db.child('transactions/' + txId).update({
+                                        'timeOut': DateTime.now().toUtc().toIso8601String(),
+                                      });
+                                    }
+                                  } catch (_) {}
+                                  if (mounted) Navigator.of(context).pop();
                                 },
                                 sliderButtonIcon:
-                                    const Icon(Icons.arrow_forward, color: Colors.black),
+                                    const Icon(Icons.check, color: Colors.black),
                               ),
                             ),
                           ),
