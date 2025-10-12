@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cygo_ps/app_drawer.dart';
 import 'menu/payment_page.dart'; // make sure you have this import
+import 'welcome_screen.dart';
 
 class QRCodeScreen extends StatefulWidget {
   final String vehicleType;
@@ -400,13 +401,14 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                                     _buildDetailRow('Slot', slot.isEmpty ? '-' : slot),
                                     _buildDetailRow('Vehicle', vehicleTypeStr.isNotEmpty ? vehicleTypeStr : widget.vehicleType),
                                     _buildDetailRow('Time In', timeIn.isEmpty ? '-' : _formatDateTime(timeIn)),
-                                    _buildDetailRow(
-                                        'Rate/Hour', '₱${ratePerHour.toStringAsFixed(2)}'),
+                                    if (ratePerHour > 0)
+                                      _buildDetailRow('Total Fee', '₱${ratePerHour.toStringAsFixed(2)}'),
                                     if (isPWD)
                                       _buildDetailRow('PWD Discount',
                                           '${(discountPercent * 100).toStringAsFixed(0)}%'),
-                                    _buildDetailRow('Status', status,
-                                        valueColor: Colors.green),
+                                    if (timeOut.isNotEmpty)
+                                      _buildDetailRow('Time Out', _formatDateTime(timeOut)),
+                                    _buildDetailRow('Status', status, valueColor: Colors.green),
                                   ],
                                 ),
                               ),
@@ -414,49 +416,73 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
 
                           const SizedBox(height: 30),
 
-                          // Slider Button instead of Done Button
-                          Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: SizedBox(
-                              width: 400,
-                              child: SlideAction(
-                                borderRadius: 25,
-                                text: "Done Transaction",
-                                textStyle: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                          // Slider: proceed to payment after scanned; after payment show complete transaction
+                          if (timeIn.isNotEmpty && (status != 'COMPLETED'))
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: SizedBox(
+                                width: 400,
+                                child: SlideAction(
+                                  borderRadius: 25,
+                                  text: "Proceed to Payment",
+                                  textStyle: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  outerColor: Colors.amber,
+                                  innerColor: Colors.white,
+                                  onSubmit: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const PaymentPage(),
+                                      ),
+                                    );
+                                  },
+                                  sliderButtonIcon: const Icon(Icons.arrow_forward, color: Colors.black),
                                 ),
-                                outerColor: Colors.amber,
-                                innerColor: Colors.white,
-                                onSubmit: () async {
-                                  try {
-                                    if (txId.isNotEmpty) {
-                                      final db = FirebaseDatabase.instance.ref();
-                                      await db.child('transactions/' + txId).update({
-                                        'timeOut': DateTime.now().toUtc().toIso8601String(),
-                                      });
+                              ),
+                            )
+                          else if (status == 'COMPLETED' || timeOut.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: SizedBox(
+                                width: 400,
+                                child: SlideAction(
+                                  borderRadius: 25,
+                                  text: "Complete Transaction",
+                                  textStyle: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  outerColor: Colors.amber,
+                                  innerColor: Colors.white,
+                                  onSubmit: () async {
+                                    try {
+                                      if (txId.isNotEmpty) {
+                                        final db = FirebaseDatabase.instance.ref();
+                                        await db.child('transactions/' + txId).update({
+                                          'timeOut': DateTime.now().toUtc().toIso8601String(),
+                                        });
+                                      }
+                                    } catch (_) {}
+                                    if (mounted) {
+                                      Navigator.of(context).pushAndRemoveUntil(
+                                        MaterialPageRoute(
+                                          builder: (_) => WelcomeScreen(userName: displayName, profileImageUrl: profileImageUrl),
+                                        ),
+                                        (route) => false,
+                                      );
                                     }
-                                  } catch (_) {}
-                                  if (mounted) Navigator.of(context).pop();
-                                },
-                                sliderButtonIcon:
-                                    const Icon(Icons.check, color: Colors.black),
+                                  },
+                                  sliderButtonIcon: const Icon(Icons.check, color: Colors.black),
+                                ),
                               ),
                             ),
-                          ),
 
-                          if (kDebugMode) ...[
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: 400,
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey),
-                                onPressed: _simulateEntryScan,
-                                child: const Text('Simulate Entry Scan (DEV)'),
-                              ),
-                            ),
-                          ],
+                          // removed simulate button
                         ],
                       ),
                     ),
