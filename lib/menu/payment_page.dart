@@ -6,6 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'mockpay_page.dart';
 
 class PaymentPage extends StatefulWidget {
   const PaymentPage({super.key});
@@ -178,6 +179,33 @@ class _PaymentPageState extends State<PaymentPage> {
     }
   }
 
+  Future<void> _openMockPay() async {
+    if (txId == null || amountToPay <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Total fee not available yet. Ensure your QR was scanned at entry.')),
+        );
+      }
+      return;
+    }
+    try {
+      // lazy import to avoid tight coupling
+      // ignore: prefer_interpolation_to_compose_strings
+      final page = await _resolveMockPayPage();
+      if (!mounted) return;
+      final changed = await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+      if (changed == true) {
+        // reload data
+        await _loadActiveTransaction();
+      }
+    } catch (_) {}
+  }
+
+  Future<Widget> _resolveMockPayPage() async {
+    // avoid static import; using runtime import-like structure
+    return MockPayPage(txId: txId!, amount: amountToPay, merchantName: 'CYGO Parking');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -255,6 +283,16 @@ class _PaymentPageState extends State<PaymentPage> {
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
                       icon: const Icon(Icons.account_balance_wallet),
                       label: const Text('Pay with GCash'),
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: _openMockPay,
+                      child: const Text('Pay (Mock GCash in-app)'),
                     ),
                   ),
 
