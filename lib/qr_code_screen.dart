@@ -35,6 +35,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
   double discountPercent = 0.0;
   double amountToPay = 0.0; // <-- added to pass to payment page
   Stream<DatabaseEvent>? _txStream;
+  bool _entryAllowedPresent = true; // block completion until exit scanner clears it
 
   @override
   void initState() {
@@ -196,6 +197,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
           discountPercent = (data['discountPercent'] ?? discountPercent).toDouble();
           amountToPay = (data['amountToPay'] ?? amountToPay ?? 0).toDouble();
           vehicleTypeStr = (data['vehicleType'] ?? vehicleTypeStr).toString();
+          _entryAllowedPresent = data.containsKey('entryAllowed');
         });
       }
     });
@@ -446,7 +448,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                                 ),
                               ),
                             )
-                          else if (timeOut.isNotEmpty)
+                          else if ((status.toUpperCase() == 'COMPLETED' || timeOut.isNotEmpty) && !_entryAllowedPresent)
                             Padding(
                               padding: const EdgeInsets.all(16.0),
                               child: SizedBox(
@@ -513,6 +515,26 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                                     }
                                   },
                                   sliderButtonIcon: const Icon(Icons.check, color: Colors.black),
+                                ),
+                              ),
+                            ),
+                          else if (status.toUpperCase() == 'COMPLETED' && _entryAllowedPresent)
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: SizedBox(
+                                width: 400,
+                                child: SlideAction(
+                                  borderRadius: 25,
+                                  text: "Scan at exit to enable",
+                                  textStyle: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  outerColor: Colors.grey,
+                                  innerColor: Colors.white,
+                                  onSubmit: () {}, // disabled state mimic
+                                  sliderButtonIcon: const Icon(Icons.lock, color: Colors.black),
                                 ),
                               ),
                             ),
