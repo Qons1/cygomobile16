@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'home_page.dart'; // your current HomePage file
 import 'package:firebase_auth/firebase_auth.dart';
