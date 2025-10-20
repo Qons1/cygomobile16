@@ -19,6 +19,7 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
   final ImagePicker _picker = ImagePicker();
   File? _image;
   bool _submitting = false;
+  List<_Incident> _myIncidents = [];
 
   static const String cloudName = 'dy5kbbskp';
   static const String uploadPreset = 'reports_img';
@@ -71,6 +72,68 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
       });
     } finally {
       setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribeMyIncidents();
+  }
+
+  void _subscribeMyIncidents() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final ref = FirebaseDatabase.instance.ref('incidents');
+    ref.onValue.listen((event) {
+      final val = event.snapshot.value;
+      final List<_Incident> items = [];
+      if (val is Map) {
+        val.forEach((key, v) {
+          if (v is Map && (v['uid']?.toString() == uid)) {
+            items.add(_Incident.fromMap(key.toString(), Map<String, dynamic>.from(v)));
+          }
+        });
+      }
+      items.sort((a,b)=> (b.timestamp??'').compareTo(a.timestamp??''));
+      setState(()=> _myIncidents = items);
+      // Prompt for pending user confirm
+      for (final inc in items) {
+        if ((inc.status??'').toUpperCase() == 'PENDING_USER_CONFIRM') {
+          _promptResolve(inc);
+        }
+      }
+    });
+  }
+
+  Future<void> _promptResolve(_Incident inc) async {
+    if (!mounted) return;
+    final res = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => AlertDialog(
+        title: Text('Issue resolved?'),
+        content: Text('Issue "${inc.description ?? ''}" resolved?'),
+        actions: [
+          TextButton(onPressed: ()=> Navigator.pop(context, false), child: const Text('No')),
+          ElevatedButton(onPressed: ()=> Navigator.pop(context, true), child: const Text('Yes')),
+        ],
+      )
+    );
+    if (res == true) {
+      await _finalizeIncident(inc.id, true);
+    } else if (res == false) {
+      // reopen
+      await FirebaseDatabase.instance.ref('incidents/'+inc.id).update({ 'status': 'OPEN' });
+    }
+  }
+
+  Future<void> _finalizeIncident(String id, bool resolved) async {
+    final ref = FirebaseDatabase.instance.ref('incidents/'+id);
+    if (resolved) {
+      await ref.update({ 'status': 'RESOLVED', 'resolvedAt': DateTime.now().millisecondsSinceEpoch });
+    } else {
+      await ref.update({ 'status': 'OPEN' });
     }
   }
 
@@ -152,6 +215,31 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
                             : const Text("Submit Report"),
                       ),
                     ),
+                    const SizedBox(height: 24),
+                    Align(alignment: Alignment.centerLeft, child: Text('My Submitted Reports', style: TextStyle(fontWeight: FontWeight.bold)) ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: _myIncidents.isEmpty
+                        ? const Center(child: Text('No reports yet'))
+                        : ListView.separated(
+                            itemCount: _myIncidents.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (context, index){
+                              final inc = _myIncidents[index];
+                              final st = (inc.status??'');
+                              return ListTile(
+                                title: Text(inc.description ?? ''),
+                                subtitle: Text('${inc.timestamp ?? ''}  •  ${st}'),
+                                trailing: (st.toUpperCase() != 'RESOLVED')
+                                  ? TextButton(
+                                      onPressed: ()=> _finalizeIncident(inc.id, true),
+                                      child: const Text('Resolve')
+                                    )
+                                  : const Icon(Icons.check, color: Colors.green),
+                              );
+                            },
+                          ),
+                    ),
                   ],
                 ),
               ),
@@ -159,6 +247,28 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _Incident {
+  final String id;
+  final String? uid;
+  final String? description;
+  final String? imageUrl;
+  final String? timestamp;
+  final String? status;
+  final String? incidentId;
+  _Incident({required this.id, this.uid, this.description, this.imageUrl, this.timestamp, this.status, this.incidentId});
+  factory _Incident.fromMap(String id, Map<String, dynamic> m){
+    return _Incident(
+      id: id,
+      uid: m['uid']?.toString(),
+      description: m['description']?.toString(),
+      imageUrl: m['imageUrl']?.toString(),
+      timestamp: m['timestamp']?.toString(),
+      status: m['status']?.toString(),
+      incidentId: m['incidentId']?.toString(),
     );
   }
 }
