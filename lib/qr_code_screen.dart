@@ -518,7 +518,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                                 ),
                               ),
                             ),
-                          else if (status.toUpperCase() == 'COMPLETED' && _entryAllowedPresent)
+                          if (status.toUpperCase() == 'COMPLETED' && _entryAllowedPresent)
                             Padding(
                               padding: const EdgeInsets.all(16.0),
                               child: SizedBox(
