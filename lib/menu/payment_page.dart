@@ -154,39 +154,61 @@ class _PaymentPageState extends State<PaymentPage> {
         userName: userName,
         profileImageUrl: profileImageUrl,
       ),
-      appBar: AppBar(
-        title: const Text('Payment'),
-        backgroundColor: Colors.amber,
-      ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16.0),
+          : SafeArea(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Payment', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  _row('Slot', slot.isEmpty ? '-' : slot),
-                  _row('Time In', timeIn.isEmpty ? '-' : _formatDateTime(timeIn)),
-                  const Divider(),
-                  _row('Total Fee', '₱' + amountToPay.toStringAsFixed(2), isBold: true),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _openGCashToPay,
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-                      child: const Text('Pay with GCash'),
+                  // Top bar with logo + menu button (like ApplyPWD)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 25.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Image.asset('assets/image.png', height: 50),
+                        Builder(
+                          builder: (context) => IconButton(
+                            icon: const Icon(Icons.menu, size: 28),
+                            onPressed: () => Scaffold.of(context).openDrawer(),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade300, foregroundColor: Colors.black),
-                      child: const Text('Cancel'),
+
+                  // Content
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Payment', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 12),
+                          _row('Slot', slot.isEmpty ? '-' : slot),
+                          _row('Time In', timeIn.isEmpty ? '-' : _formatDateTime(timeIn)),
+                          const Divider(),
+                          _row('Total Fee', '₱' + amountToPay.toStringAsFixed(2), isBold: true),
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _openGCashToPay,
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+                              child: const Text('Pay with GCash'),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade300, foregroundColor: Colors.black),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],

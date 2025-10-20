@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:cygo_ps/app_drawer.dart';
 
 class IncidentReportPage extends StatefulWidget {
   const IncidentReportPage({super.key});
@@ -75,56 +76,84 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final userName = user?.displayName ?? (user?.email ?? 'User');
+    final profileImageUrl = user?.photoURL ?? '';
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Report Incident"), backgroundColor: Colors.amber),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
+      drawer: AppDrawer(userName: userName, profileImageUrl: profileImageUrl),
+      body: SafeArea(
         child: Column(
           children: [
-            _image != null
-                ? Image.file(_image!, height: 220)
-                : Container(
-                    height: 220,
-                    alignment: Alignment.center,
-                    color: Colors.grey[300],
-                    child: const Text("No image selected"),
+            // Top bar with logo + menu button
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 25.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Image.asset('assets/image.png', height: 50),
+                  Builder(
+                    builder: (context) => IconButton(
+                      icon: const Icon(Icons.menu, size: 28),
+                      onPressed: () => Scaffold.of(context).openDrawer(),
+                    ),
                   ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _pickImage(ImageSource.camera),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text("Camera"),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _pickImage(ImageSource.gallery),
-                    icon: const Icon(Icons.photo_library),
-                    label: const Text("Gallery"),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: descriptionController,
-              maxLines: 4,
-              decoration: const InputDecoration(labelText: "Incident Description", border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _submitting ? null : _submitReport,
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-                child: _submitting
-                    ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                    : const Text("Submit Report"),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    _image != null
+                        ? Image.file(_image!, height: 220)
+                        : Container(
+                            height: 220,
+                            alignment: Alignment.center,
+                            color: Colors.grey[300],
+                            child: const Text("No image selected"),
+                          ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _pickImage(ImageSource.camera),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+                            icon: const Icon(Icons.camera_alt),
+                            label: const Text("Camera"),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => _pickImage(ImageSource.gallery),
+                            icon: const Icon(Icons.photo_library),
+                            label: const Text("Gallery"),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: descriptionController,
+                      maxLines: 4,
+                      decoration: const InputDecoration(labelText: "Incident Description", border: OutlineInputBorder()),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _submitting ? null : _submitReport,
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+                        child: _submitting
+                            ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                            : const Text("Submit Report"),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
