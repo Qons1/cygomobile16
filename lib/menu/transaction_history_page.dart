@@ -18,7 +18,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   void initState() {
     super.initState();
     _uid = FirebaseAuth.instance.currentUser?.uid;
-    _txRef = FirebaseDatabase.instance.ref('transactions');
+    // Read per-account transaction history instead of scanning global transactions
+    _txRef = FirebaseDatabase.instance.ref('transactionHistory');
   }
 
   @override
@@ -31,7 +32,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       body: _uid == null
           ? const Center(child: Text('Not logged in'))
           : StreamBuilder<DatabaseEvent>(
-              stream: _txRef.orderByChild('uid').equalTo(_uid).onValue,
+              stream: FirebaseDatabase.instance.ref('transactionHistory/' + _uid!).onValue,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());

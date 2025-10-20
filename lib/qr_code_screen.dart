@@ -463,11 +463,44 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                                   innerColor: Colors.white,
                                   onSubmit: () async {
                                     try {
-                                      if (txId.isNotEmpty) {
+                                      if (txId.isNotEmpty && uid != null) {
                                         final db = FirebaseDatabase.instance.ref();
+                                        final String nowIso = DateTime.now().toUtc().toIso8601String();
+
+                                        // Ensure timeOut exists
                                         await db.child('transactions/' + txId).update({
-                                          'timeOut': DateTime.now().toUtc().toIso8601String(),
+                                          'timeOut': nowIso,
                                         });
+
+                                        // Read latest transaction to capture all fields for history
+                                        final txSnap = await db.child('transactions/' + txId).get();
+                                        Map<String, dynamic> tx = {};
+                                        if (txSnap.exists && txSnap.value is Map) {
+                                          tx = Map<String, dynamic>.from(txSnap.value as Map);
+                                        }
+
+                                        final Map<String, dynamic> history = {
+                                          'txId': txId,
+                                          'uid': uid,
+                                          'slot': (tx['slot'] ?? '' ).toString(),
+                                          'vehicleType': (tx['vehicleType'] ?? widget.vehicleType).toString(),
+                                          'timeIn': (tx['timeIn'] ?? '').toString(),
+                                          'timeOut': (tx['timeOut'] ?? nowIso).toString(),
+                                          'status': (tx['status'] ?? 'COMPLETED').toString(),
+                                          'ratePerHour': (tx['ratePerHour'] ?? 0),
+                                          'discountPercent': (tx['discountPercent'] ?? 0),
+                                          'amountToPay': (tx['amountToPay'] ?? 0),
+                                          'amountPaid': (tx['amountPaid'] ?? 0),
+                                          'plateNumber': (tx['plateNumber'] ?? '').toString(),
+                                          'plateImageUrl': (tx['plateImageUrl'] ?? '').toString(),
+                                          'createdAt': nowIso,
+                                        };
+
+                                        // Write per-account transaction history
+                                        await db.child('transactionHistory/' + uid! + '/' + txId).set(history);
+
+                                        // Clear active transaction so next session starts fresh
+                                        await db.child('users/' + uid! + '/activeTransaction').set(null);
                                       }
                                     } catch (_) {}
                                     if (mounted) {
