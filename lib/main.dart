@@ -17,6 +17,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       home: const _RootWithIncidentWatcher(child: HomePage()),
     );
   }
@@ -31,7 +32,7 @@ class _RootWithIncidentWatcher extends StatefulWidget {
 
 class _RootWithIncidentWatcherState extends State<_RootWithIncidentWatcher> {
   DatabaseReference? _ref;
-  Stream<DatabaseEvent>? _sub;
+  StreamSubscription<DatabaseEvent>? _sub;
   String? _uid;
 
   @override
@@ -42,7 +43,7 @@ class _RootWithIncidentWatcherState extends State<_RootWithIncidentWatcher> {
 
   @override
   void dispose() {
-    _sub?.drain();
+    _sub?.cancel();
     super.dispose();
   }
 
