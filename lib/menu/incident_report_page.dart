@@ -227,6 +227,8 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
                             itemBuilder: (context, index){
                               final inc = _myIncidents[index];
                               final st = (inc.status??'');
+                              // Hide resolved items from list
+                              if (st.toUpperCase() == 'RESOLVED') return const SizedBox.shrink();
                               return ListTile(
                                 title: Text(inc.description ?? ''),
                                 subtitle: Text('${inc.timestamp ?? ''}  •  ${st}'),
