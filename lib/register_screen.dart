@@ -34,6 +34,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
 
       String uid = userCred.user!.uid;
+      try {
+        await userCred.user!.sendEmailVerification();
+      } catch(_) {}
       String qrCodeData = generateUniqueId();
 
       // Save user details in Realtime Database
@@ -48,9 +51,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Registration successful!')),
+        const SnackBar(content: Text('Check your email to verify your account.')),
       );
-      Navigator.pop(context); // go back to home
+      if (mounted) Navigator.pop(context);
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message ?? 'Error')),

@@ -23,12 +23,17 @@ class _LoginScreenState extends State<LoginScreen> {
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
       );
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Login successful!')),
-      );
-
-      return true; // If login successful
+      final u = FirebaseAuth.instance.currentUser;
+      if (u != null && !u.emailVerified) {
+        try { await u.sendEmailVerification(); } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Email not verified. Verification link sent.')),
+        );
+        await FirebaseAuth.instance.signOut();
+        return false;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Login successful!')));
+      return true;
     } on FirebaseAuthException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message ?? 'Error')),

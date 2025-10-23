@@ -20,6 +20,22 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
   File? _image;
   bool _submitting = false;
   List<_Incident> _myIncidents = [];
+  String? _selectedCategory; // visible to user (title)
+
+  // Hidden priority mapping (do not display priority labels on UI)
+  static const List<Map<String, String>> _categories = [
+    { 'title': 'Vehicle collision with another parked car', 'priority': 'high' },
+    { 'title': 'Occupying multiple slots / improper parking', 'priority': 'high' },
+    { 'title': 'Unauthorized vehicle in reserved or PWD slot', 'priority': 'high' },
+    { 'title': 'Blocking other vehicles (parked too close or behind)', 'priority': 'medium' },
+    { 'title': 'Vehicle problem', 'priority': 'medium' },
+    { 'title': 'Trash or litter left in slot', 'priority': 'low' },
+    { 'title': 'Vandalism (scratches, broken mirrors, graffiti)', 'priority': 'low' },
+  ];
+
+  int _priorityWeight(String p){
+    switch(p){ case 'high': return 3; case 'medium': return 2; case 'low': return 1; default: return 0; }
+  }
 
   static const String cloudName = 'dy5kbbskp';
   static const String uploadPreset = 'reports_img';
@@ -49,6 +65,10 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
 
   Future<void> _submitReport() async {
     if (_image == null || _submitting) return;
+    if ((_selectedCategory==null) || _selectedCategory!.isEmpty){
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a category')));
+      return;
+    }
     setState(() => _submitting = true);
     try {
       final url = await _uploadToCloudinary(_image!);
@@ -58,17 +78,23 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
       }
       final uid = FirebaseAuth.instance.currentUser?.uid ?? 'anonymous';
       final ref = FirebaseDatabase.instance.ref('incidents').push();
+      final cat = _categories.firstWhere((m)=> m['title']==_selectedCategory, orElse: ()=> const {'title':'Other','priority':'low'});
+      final pr = (cat['priority'] ?? 'low');
       await ref.set({
         'uid': uid,
         'description': descriptionController.text.trim(),
         'imageUrl': url,
         'timestamp': DateTime.now().toUtc().toIso8601String(),
         'status': 'OPEN',
+        'categoryTitle': cat['title'],
+        'priority': pr,
+        'priorityWeight': _priorityWeight(pr),
       });
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Incident submitted')));
       setState(() {
         _image = null;
         descriptionController.clear();
+        _selectedCategory = null;
       });
     } finally {
       setState(() => _submitting = false);
@@ -97,44 +123,7 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
       }
       items.sort((a,b)=> (b.timestamp??'').compareTo(a.timestamp??''));
       setState(()=> _myIncidents = items);
-      // Prompt for pending user confirm
-      for (final inc in items) {
-        if ((inc.status??'').toUpperCase() == 'PENDING_USER_CONFIRM') {
-          _promptResolve(inc);
-        }
-      }
     });
-  }
-
-  Future<void> _promptResolve(_Incident inc) async {
-    if (!mounted) return;
-    final res = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      builder: (_) => AlertDialog(
-        title: Text('Issue resolved?'),
-        content: Text('Issue "${inc.description ?? ''}" resolved?'),
-        actions: [
-          TextButton(onPressed: ()=> Navigator.pop(context, false), child: const Text('No')),
-          ElevatedButton(onPressed: ()=> Navigator.pop(context, true), child: const Text('Yes')),
-        ],
-      )
-    );
-    if (res == true) {
-      await _finalizeIncident(inc.id, true);
-    } else if (res == false) {
-      // reopen
-      await FirebaseDatabase.instance.ref('incidents/'+inc.id).update({ 'status': 'OPEN' });
-    }
-  }
-
-  Future<void> _finalizeIncident(String id, bool resolved) async {
-    final ref = FirebaseDatabase.instance.ref('incidents/'+id);
-    if (resolved) {
-      await ref.update({ 'status': 'RESOLVED', 'resolvedAt': DateTime.now().millisecondsSinceEpoch });
-    } else {
-      await ref.update({ 'status': 'OPEN' });
-    }
   }
 
   @override
@@ -170,7 +159,24 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
                 child: Column(
                   children: [
                     _image != null
-                        ? Image.file(_image!, height: 220)
+                        ? GestureDetector(
+                            onTap: (){
+                              showDialog(context: context, builder: (_){
+                                return Dialog(
+                                  insetPadding: const EdgeInsets.all(16),
+                                  backgroundColor: Colors.transparent,
+                                  child: Stack(children: [
+                                    Container(
+                                      decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(12)),
+                                      padding: const EdgeInsets.all(8),
+                                      child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.file(_image!)),
+                                    ),
+                                  ]),
+                                );
+                              });
+                            },
+                            child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(_image!, height: 220, fit: BoxFit.cover)),
+                          )
                         : Container(
                             height: 220,
                             alignment: Alignment.center,
@@ -199,6 +205,16 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
                       ],
                     ),
                     const SizedBox(height: 16),
+                    // Category dropdown (no priority labels shown to user)
+                    DropdownButtonFormField<String>(
+                      value: _selectedCategory,
+                      items: _categories.map((m)=> DropdownMenuItem<String>(
+                        value: m['title']!, child: Text(m['title']!),
+                      )).toList(),
+                      onChanged: (v){ setState(()=> _selectedCategory = v); },
+                      decoration: const InputDecoration(labelText: 'Select Category', border: OutlineInputBorder()),
+                    ),
+                    const SizedBox(height: 12),
                     TextField(
                       controller: descriptionController,
                       maxLines: 4,
@@ -227,17 +243,15 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
                             itemBuilder: (context, index){
                               final inc = _myIncidents[index];
                               final st = (inc.status??'');
-                              // Hide resolved items from list
                               if (st.toUpperCase() == 'RESOLVED') return const SizedBox.shrink();
+                              final title = (inc.categoryTitle ?? '').trim();
                               return ListTile(
-                                title: Text(inc.description ?? ''),
+                                title: Text(
+                                  title.isNotEmpty ? '$title — ${inc.description ?? ''}' : (inc.description ?? ''),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                                 subtitle: Text('${inc.timestamp ?? ''}  •  ${st}'),
-                                trailing: (st.toUpperCase() != 'RESOLVED')
-                                  ? TextButton(
-                                      onPressed: ()=> _finalizeIncident(inc.id, true),
-                                      child: const Text('Resolve')
-                                    )
-                                  : const Icon(Icons.check, color: Colors.green),
                               );
                             },
                           ),
@@ -261,6 +275,8 @@ class _Incident {
   final String? timestamp;
   final String? status;
   final String? incidentId;
+  final String? categoryTitle;
+  final String? priority;
   _Incident({required this.id, this.uid, this.description, this.imageUrl, this.timestamp, this.status, this.incidentId});
   factory _Incident.fromMap(String id, Map<String, dynamic> m){
     return _Incident(
@@ -271,6 +287,9 @@ class _Incident {
       timestamp: m['timestamp']?.toString(),
       status: m['status']?.toString(),
       incidentId: m['incidentId']?.toString(),
+      // optional new fields
+      categoryTitle: m['categoryTitle']?.toString(),
+      priority: m['priority']?.toString(),
     );
   }
 }
