@@ -277,7 +277,17 @@ class _Incident {
   final String? incidentId;
   final String? categoryTitle;
   final String? priority;
-  _Incident({required this.id, this.uid, this.description, this.imageUrl, this.timestamp, this.status, this.incidentId});
+  _Incident({
+    required this.id,
+    this.uid,
+    this.description,
+    this.imageUrl,
+    this.timestamp,
+    this.status,
+    this.incidentId,
+    this.categoryTitle,
+    this.priority,
+  });
   factory _Incident.fromMap(String id, Map<String, dynamic> m){
     return _Incident(
       id: id,
