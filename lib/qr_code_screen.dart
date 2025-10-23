@@ -36,6 +36,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
   double amountToPay = 0.0; // <-- added to pass to payment page
   Stream<DatabaseEvent>? _txStream;
   bool _entryAllowedPresent = true; // block completion until exit scanner clears it
+  Stream<DatabaseEvent>? _occStream; // listen to slot occupancy to detect exit
 
   @override
   void initState() {
@@ -199,8 +200,77 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
           vehicleTypeStr = (data['vehicleType'] ?? vehicleTypeStr).toString();
           _entryAllowedPresent = data.containsKey('entryAllowed');
         });
+
+        // Attach occupancy listener once slot is known
+        if (slot.isNotEmpty) {
+          _attachOccupancyListener(slot);
+        }
       }
     });
+  }
+
+  void _attachOccupancyListener(String slotName) {
+    _occStream?.drain();
+    final safeKey = _sanitizeKey(slotName);
+    _occStream = FirebaseDatabase.instance.ref('configurations/layout/occupied/' + safeKey).onValue;
+    _occStream!.listen((e) async {
+      final v = e.snapshot.value;
+      if (v is Map) {
+        final st = (v['status'] ?? '').toString().toUpperCase();
+        if (st != 'OCCUPIED' && status.toUpperCase() == 'COMPLETED') {
+          // Exit occurred; finalize and go home
+          await _finalizeAndGoHome();
+        }
+      } else {
+        // Node absent -> treated as free
+        if (status.toUpperCase() == 'COMPLETED') {
+          await _finalizeAndGoHome();
+        }
+      }
+    });
+  }
+
+  Future<void> _finalizeAndGoHome() async {
+    try {
+      if (txId.isNotEmpty && uid != null) {
+        final db = FirebaseDatabase.instance.ref();
+        final String nowIso = DateTime.now().toUtc().toIso8601String();
+        // Ensure timeOut exists
+        await db.child('transactions/' + txId).update({'timeOut': nowIso});
+        // Read latest transaction snapshot
+        final txSnap = await db.child('transactions/' + txId).get();
+        Map<String, dynamic> tx = {};
+        if (txSnap.exists && txSnap.value is Map) {
+          tx = Map<String, dynamic>.from(txSnap.value as Map);
+        }
+        final Map<String, dynamic> history = {
+          'txId': txId,
+          'uid': uid,
+          'slot': (tx['slot'] ?? '').toString(),
+          'vehicleType': (tx['vehicleType'] ?? widget.vehicleType).toString(),
+          'timeIn': (tx['timeIn'] ?? '').toString(),
+          'timeOut': (tx['timeOut'] ?? nowIso).toString(),
+          'status': (tx['status'] ?? 'COMPLETED').toString(),
+          'ratePerHour': (tx['ratePerHour'] ?? 0),
+          'discountPercent': (tx['discountPercent'] ?? 0),
+          'amountToPay': (tx['amountToPay'] ?? 0),
+          'amountPaid': (tx['amountPaid'] ?? 0),
+          'plateNumber': (tx['plateNumber'] ?? '').toString(),
+          'plateImageUrl': (tx['plateImageUrl'] ?? '').toString(),
+          'createdAt': nowIso,
+        };
+        await db.child('transactionHistory/' + uid! + '/' + txId).set(history);
+        await db.child('users/' + uid! + '/activeTransaction').set(null);
+      }
+    } catch (_) {}
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => WelcomeScreen(userName: displayName, profileImageUrl: profileImageUrl),
+        ),
+        (route) => false,
+      );
+    }
   }
 
   Future<String?> _selectSlotDisplayName(bool userIsPwd, String vehicleType) async {
@@ -420,7 +490,7 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
 
                           const SizedBox(height: 30),
 
-                          // Slider: proceed to payment after scanned; after payment show complete transaction
+                          // Slider: proceed to payment after scanned
                           if (timeIn.isNotEmpty && (status != 'COMPLETED'))
                             Padding(
                               padding: const EdgeInsets.all(16.0),
@@ -448,93 +518,21 @@ class _QRCodeScreenState extends State<QRCodeScreen> {
                                 ),
                               ),
                             )
-                          else if ((status.toUpperCase() == 'COMPLETED' || timeOut.isNotEmpty) && !_entryAllowedPresent)
+                          else if (status.toUpperCase() == 'COMPLETED')
                             Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: SizedBox(
-                                width: 400,
-                                child: SlideAction(
-                                  borderRadius: 25,
-                                  text: "Complete Transaction",
-                                  textStyle: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  outerColor: Colors.amber,
-                                  innerColor: Colors.white,
-                                  onSubmit: () async {
-                                    try {
-                                      if (txId.isNotEmpty && uid != null) {
-                                        final db = FirebaseDatabase.instance.ref();
-                                        final String nowIso = DateTime.now().toUtc().toIso8601String();
-
-                                        // Ensure timeOut exists
-                                        await db.child('transactions/' + txId).update({
-                                          'timeOut': nowIso,
-                                        });
-
-                                        // Read latest transaction to capture all fields for history
-                                        final txSnap = await db.child('transactions/' + txId).get();
-                                        Map<String, dynamic> tx = {};
-                                        if (txSnap.exists && txSnap.value is Map) {
-                                          tx = Map<String, dynamic>.from(txSnap.value as Map);
-                                        }
-
-                                        final Map<String, dynamic> history = {
-                                          'txId': txId,
-                                          'uid': uid,
-                                          'slot': (tx['slot'] ?? '' ).toString(),
-                                          'vehicleType': (tx['vehicleType'] ?? widget.vehicleType).toString(),
-                                          'timeIn': (tx['timeIn'] ?? '').toString(),
-                                          'timeOut': (tx['timeOut'] ?? nowIso).toString(),
-                                          'status': (tx['status'] ?? 'COMPLETED').toString(),
-                                          'ratePerHour': (tx['ratePerHour'] ?? 0),
-                                          'discountPercent': (tx['discountPercent'] ?? 0),
-                                          'amountToPay': (tx['amountToPay'] ?? 0),
-                                          'amountPaid': (tx['amountPaid'] ?? 0),
-                                          'plateNumber': (tx['plateNumber'] ?? '').toString(),
-                                          'plateImageUrl': (tx['plateImageUrl'] ?? '').toString(),
-                                          'createdAt': nowIso,
-                                        };
-
-                                        // Write per-account transaction history
-                                        await db.child('transactionHistory/' + uid! + '/' + txId).set(history);
-
-                                        // Clear active transaction so next session starts fresh
-                                        await db.child('users/' + uid! + '/activeTransaction').set(null);
-                                      }
-                                    } catch (_) {}
-                                    if (mounted) {
-                                      Navigator.of(context).pushAndRemoveUntil(
-                                        MaterialPageRoute(
-                                          builder: (_) => WelcomeScreen(userName: displayName, profileImageUrl: profileImageUrl),
-                                        ),
-                                        (route) => false,
-                                      );
-                                    }
-                                  },
-                                  sliderButtonIcon: const Icon(Icons.check, color: Colors.black),
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade100,
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                              ),
-                            ),
-                          if (status.toUpperCase() == 'COMPLETED' && _entryAllowedPresent)
-                            Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: SizedBox(
-                                width: 400,
-                                child: SlideAction(
-                                  borderRadius: 25,
-                                  text: "Scan at exit to enable",
-                                  textStyle: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
+                                child: const Center(
+                                  child: Text(
+                                    'Scan to Exit',
+                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black),
                                   ),
-                                  outerColor: Colors.grey,
-                                  innerColor: Colors.white,
-                                  onSubmit: () {}, // disabled state mimic
-                                  sliderButtonIcon: const Icon(Icons.lock, color: Colors.black),
                                 ),
                               ),
                             ),
