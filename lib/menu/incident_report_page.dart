@@ -208,8 +208,14 @@ class _IncidentReportPageState extends State<IncidentReportPage> {
                     // Category dropdown (no priority labels shown to user)
                     DropdownButtonFormField<String>(
                       value: _selectedCategory,
+                      isExpanded: true,
                       items: _categories.map((m)=> DropdownMenuItem<String>(
-                        value: m['title']!, child: Text(m['title']!),
+                        value: m['title']!,
+                        child: Text(
+                          m['title']!,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
                       )).toList(),
                       onChanged: (v){ setState(()=> _selectedCategory = v); },
                       decoration: const InputDecoration(labelText: 'Select Category', border: OutlineInputBorder()),
