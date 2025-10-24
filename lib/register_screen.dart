@@ -15,6 +15,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final contactController = TextEditingController();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
+  final confirmPasswordController = TextEditingController();
   bool loading = false;
 
   String generateUniqueId() {
@@ -26,6 +27,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> register() async {
     setState(() => loading = true);
     try {
+      // Validate passwords match
+      if (confirmPasswordController.text.trim() != passwordController.text.trim()) {
+        setState(() => loading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Passwords do not match')),
+          );
+        }
+        return;
+      }
       // Create Firebase Auth user
       UserCredential userCred = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
@@ -114,6 +125,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 controller: passwordController,
                 decoration: const InputDecoration(
                   labelText: "Password",
+                  border: OutlineInputBorder(),
+                ),
+                obscureText: true,
+              ),
+              const SizedBox(height: 12.0),
+              TextField(
+                controller: confirmPasswordController,
+                decoration: const InputDecoration(
+                  labelText: "Retype Password",
                   border: OutlineInputBorder(),
                 ),
                 obscureText: true,

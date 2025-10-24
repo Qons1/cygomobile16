@@ -25,6 +25,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   late TextEditingController _profileImageController;
   late TextEditingController _contactController;
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _passwordConfirmController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
   File? _newAvatar;
   bool _saving = false;
@@ -47,6 +48,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _profileImageController.dispose();
     _contactController.dispose();
     _passwordController.dispose();
+    _passwordConfirmController.dispose();
     super.dispose();
   }
 
@@ -112,9 +114,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
         await user.updatePhotoURL(updatedImageUrl);
       }
 
-      // Update password if provided
+      // Update password if provided and confirmed
       final newPassword = _passwordController.text.trim();
+      final newPassword2 = _passwordConfirmController.text.trim();
       if (newPassword.isNotEmpty) {
+        if (newPassword2 != newPassword) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Passwords do not match')),
+            );
+          }
+          setState(() => _saving = false);
+          return;
+        }
         await user.updatePassword(newPassword);
       }
 
@@ -200,6 +212,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
               obscureText: true,
               decoration: const InputDecoration(
                 labelText: 'New Password',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _passwordConfirmController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Retype New Password',
                 border: OutlineInputBorder(),
               ),
             ),
