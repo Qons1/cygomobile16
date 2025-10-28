@@ -114,10 +114,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
         await user.updatePhotoURL(updatedImageUrl);
       }
 
-      // Update password if provided and confirmed
+      // Update password if provided and confirmed; enforce strength
       final newPassword = _passwordController.text.trim();
       final newPassword2 = _passwordConfirmController.text.trim();
       if (newPassword.isNotEmpty) {
+        final re = RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$');
+        if (!re.hasMatch(newPassword)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Password must be 8+ chars with upper, lower, number, and special char.')),
+            );
+          }
+          setState(() => _saving = false);
+          return;
+        }
         if (newPassword2 != newPassword) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -220,7 +230,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
               controller: _passwordConfirmController,
               obscureText: true,
               decoration: const InputDecoration(
-                labelText: 'Retype New Password',
+                labelText: 'Re-type New Password',
                 border: OutlineInputBorder(),
               ),
             ),

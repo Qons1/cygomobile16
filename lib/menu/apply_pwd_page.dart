@@ -263,13 +263,7 @@ class _ApplyPWDPageState extends State<ApplyPWDPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text('Status:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text(
-                    _formatStatus(_pwdStatus),
-                    style: TextStyle(
-                      color: _statusColor(_pwdStatus),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  _buildStatusChip(_pwdStatus),
                 ],
               ),
             ),
@@ -302,5 +296,36 @@ class _ApplyPWDPageState extends State<ApplyPWDPage> {
     if (a == 'denied' || a == 'rejected' || b == 'denied' || b == 'rejected') return 'denied';
     if (a == 'pending' || b == 'pending') return 'pending';
     return 'none';
+  }
+
+  Widget _buildStatusChip(String? raw){
+    final text = _formatStatus(raw);
+    final c = _statusColor(raw);
+    Color bg;
+    if (c == Colors.green) bg = const Color(0xFFE7F8ED);
+    else if (c == Colors.orange) bg = const Color(0xFFFFF1CF);
+    else if (c == Colors.red) bg = const Color(0xFFFFE1E1);
+    else bg = const Color(0xFFF0F0F0);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: c, width: 2),
+        boxShadow: [
+          if (raw != null && raw.toLowerCase() == 'approved')
+            const BoxShadow(color: Colors.greenAccent, blurRadius: 10, spreadRadius: 1),
+        ],
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: (raw != null && raw.toLowerCase() == 'approved') ? 20 : 16,
+          fontWeight: FontWeight.w800,
+          color: c,
+          letterSpacing: .3,
+        ),
+      ),
+    );
   }
 }

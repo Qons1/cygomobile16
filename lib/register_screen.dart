@@ -27,6 +27,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> register() async {
     setState(() => loading = true);
     try {
+      // Validate modern password rules: >=8, upper, lower, number, special
+      final pwd = passwordController.text.trim();
+      final re = RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$');
+      if (!re.hasMatch(pwd)) {
+        setState(() => loading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Password must be 8+ chars with upper, lower, number, and special char.')),
+          );
+        }
+        return;
+      }
       // Validate passwords match
       if (confirmPasswordController.text.trim() != passwordController.text.trim()) {
         setState(() => loading = false);
@@ -133,7 +145,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               TextField(
                 controller: confirmPasswordController,
                 decoration: const InputDecoration(
-                  labelText: "Retype Password",
+                  labelText: "Re-type Password",
                   border: OutlineInputBorder(),
                 ),
                 obscureText: true,
