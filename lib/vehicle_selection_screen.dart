@@ -78,9 +78,8 @@ class VehicleSelectionScreen extends StatelessWidget {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('You already have an ongoing transaction. Redirecting...')),
                 );
-                Navigator.of(context).pushAndRemoveUntil(
+                Navigator.of(context).pushReplacement(
                   MaterialPageRoute(builder: (_) => QRCodeScreen(vehicleType: 'CAR', existingTxId: activeTx)),
-                  (route) => false,
                 );
                 return;
               }

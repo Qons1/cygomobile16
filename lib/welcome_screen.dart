@@ -200,17 +200,15 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         final snap = await FirebaseDatabase.instance.ref('users/' + u.uid).get();
                         final activeTx = snap.child('activeTransaction').value?.toString();
                         if (activeTx != null && activeTx.isNotEmpty) {
-                          Navigator.of(context).pushAndRemoveUntil(
+                          Navigator.of(context).pushReplacement(
                             MaterialPageRoute(builder: (_) => QRCodeScreen(vehicleType: 'CAR', existingTxId: activeTx)),
-                            (route) => false,
                           );
                           return;
                         }
                       }
                     } catch (_) {}
-                    Navigator.of(context).pushAndRemoveUntil(
+                    Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const VehicleSelectionScreen()),
-                      (route) => false,
                     );
                   },
                   sliderButtonIcon: const Icon(Icons.arrow_forward, color: Colors.black),

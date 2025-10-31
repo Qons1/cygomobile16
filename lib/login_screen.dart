@@ -72,6 +72,32 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               obscureText: true,
             ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () async {
+                  final email = emailController.text.trim();
+                  if (email.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Enter your email to reset password.')),
+                    );
+                    return;
+                  }
+                  try {
+                    await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Password reset email sent to $email')),
+                    );
+                  } on FirebaseAuthException catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(e.message ?? 'Failed to send reset email')),
+                    );
+                  }
+                },
+                child: const Text('Forgot password?'),
+              ),
+            ),
             const SizedBox(height: 100.0),
             SizedBox(
               width: double.infinity,
@@ -94,22 +120,20 @@ class _LoginScreenState extends State<LoginScreen> {
                             final snap = await FirebaseDatabase.instance.ref('users/' + user.uid).get();
                             final activeTx = snap.child('activeTransaction').value?.toString();
                             if (activeTx != null && activeTx.isNotEmpty) {
-                              Navigator.of(context).pushAndRemoveUntil(
+                              Navigator.of(context).pushReplacement(
                                 MaterialPageRoute(builder: (_) => QRCodeScreen(vehicleType: 'CAR', existingTxId: activeTx)),
-                                (route) => false,
                               );
                               return;
                             }
                             final display = (snap.child('displayName').value?.toString() ?? user.displayName ?? user.email ?? 'User');
                             final photo = (snap.child('profileImageUrl').value?.toString() ?? user.photoURL ?? '');
-                            Navigator.of(context).pushAndRemoveUntil(
+                            Navigator.of(context).pushReplacement(
                               MaterialPageRoute(
                                 builder: (context) => WelcomeScreen(
                                   userName: display,
                                   profileImageUrl: photo,
                                 ),
                               ),
-                              (route) => false,
                             );
                             return;
                           }

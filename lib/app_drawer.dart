@@ -119,22 +119,20 @@ class AppDrawer extends StatelessWidget {
                     final snap = await FirebaseDatabase.instance.ref('users/' + u.uid).get();
                     final activeTx = snap.child('activeTransaction').value?.toString();
                     if (activeTx != null && activeTx.isNotEmpty) {
-                      Navigator.of(context).pushAndRemoveUntil(
+                      Navigator.of(context).pushReplacement(
                         MaterialPageRoute(builder: (_) => QRCodeScreen(vehicleType: 'CAR', existingTxId: activeTx)),
-                        (route) => false,
                       );
                       return;
                     }
                   }
                 } catch (_) {}
-                Navigator.of(context).pushAndRemoveUntil(
+                Navigator.of(context).pushReplacement(
                   MaterialPageRoute(
                     builder: (_) => WelcomeScreen(
                       userName: userName,
                       profileImageUrl: profileImageUrl,
                     ),
                   ),
-                  (route) => false,
                 );
               },
             ),
@@ -211,9 +209,8 @@ class AppDrawer extends StatelessWidget {
       trailing: const Icon(Icons.arrow_forward_ios, size: 16),
       onTap: () {
         Navigator.pop(context); // Close drawer
-        Navigator.of(context).pushAndRemoveUntil(
+        Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => page),
-          (route) => false,
         );
       },
     );
